@@ -1,39 +1,15 @@
-import { Activity, ArrowUpRight, Bot, ShieldCheck, TrendingUp } from 'lucide-react'
+'use client'
+import { useState } from 'react'
+import { Activity, Bot, ShieldCheck, TrendingUp, Upload, Play } from 'lucide-react'
 
-const cards = [
-  ['Starting Capital', 'RM100,000', 'Paper portfolio'],
-  ['Available Cash', 'RM100,000', 'No live positions'],
-  ['AI Confidence', '—', 'Waiting for backtest'],
-  ['Total Return', '0.00%', 'Backtest not run'],
-]
-
-export default function Home() {
-  return (
-    <main className="min-h-screen bg-slate-950 text-white p-8">
-      <div className="mx-auto max-w-7xl space-y-8">
-        <header className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-          <div>
-            <div className="flex items-center gap-2 text-emerald-400"><Bot size={20}/> Stock Tracker AI</div>
-            <h1 className="mt-2 text-4xl font-bold tracking-tight">AI Trading Research Lab</h1>
-            <p className="mt-2 text-slate-400">Backtest first. Paper trade next. Live execution stays locked.</p>
-          </div>
-          <div className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-4 py-2 text-sm text-emerald-300">PAPER MODE</div>
-        </header>
-
-        <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {cards.map(([title, value, note]) => <div key={title} className="rounded-2xl border border-slate-800 bg-slate-900 p-5"><p className="text-sm text-slate-400">{title}</p><p className="mt-2 text-2xl font-semibold">{value}</p><p className="mt-1 text-xs text-slate-500">{note}</p></div>)}
-        </section>
-
-        <section className="grid gap-6 lg:grid-cols-3">
-          <div className="lg:col-span-2 rounded-2xl border border-slate-800 bg-slate-900 p-6">
-            <div className="flex items-center justify-between"><div><h2 className="text-xl font-semibold">Strategy Pipeline</h2><p className="text-sm text-slate-400">Support → Entry → Exit → Compound</p></div><Activity className="text-slate-500"/></div>
-            <div className="mt-6 grid gap-3 md:grid-cols-4">{['Market Scanner','Support Detector','AI Entry/Exit','Compounding'].map((x,i)=><div key={x} className="rounded-xl border border-slate-800 p-4"><div className="text-xs text-slate-500">0{i+1}</div><div className="mt-2 font-medium">{x}</div><div className="mt-2 text-xs text-amber-300">Not started</div></div>)}</div>
-          </div>
-          <div className="rounded-2xl border border-slate-800 bg-slate-900 p-6"><h2 className="text-xl font-semibold">Risk Engine</h2><div className="mt-5 space-y-4">{[['Max position','10%'],['Max exposure','50%'],['Daily loss limit','2%'],['Kill switch','10% drawdown']].map(([a,b])=><div className="flex justify-between border-b border-slate-800 pb-3" key={a}><span className="text-slate-400">{a}</span><span className="font-medium">{b}</span></div>)}</div><div className="mt-5 flex items-center gap-2 text-sm text-emerald-300"><ShieldCheck size={17}/> Live execution locked</div></div>
-        </section>
-
-        <section className="rounded-2xl border border-slate-800 bg-slate-900 p-6"><div className="flex items-center gap-2"><TrendingUp size={20} className="text-emerald-400"/><h2 className="text-xl font-semibold">Backtest Results</h2></div><div className="mt-8 grid min-h-40 place-items-center text-center text-slate-500"><div><ArrowUpRight className="mx-auto mb-3"/><p>No backtest results yet.</p><p className="text-sm">Next step: connect historical market data and run the first walk-forward test.</p></div></div></section>
-      </div>
-    </main>
-  )
+export default function Home(){
+ const [csv,setCsv]=useState(''); const [result,setResult]=useState<any>(null); const [error,setError]=useState(''); const [asset,setAsset]=useState('Moomoo Stocks')
+ async function run(){setError('');setResult(null);try{const r=await fetch('/api/backtest',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({csv,capital:100000})});const d=await r.json();if(!r.ok)throw new Error(d.error);setResult(d)}catch(e){setError(e instanceof Error?e.message:'Backtest failed')}}
+ return <main className="min-h-screen bg-slate-950 text-white p-8"><div className="mx-auto max-w-7xl space-y-8">
+  <header className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between"><div><div className="flex items-center gap-2 text-emerald-400"><Bot size={20}/> Stock Tracker AI</div><h1 className="mt-2 text-4xl font-bold tracking-tight">AI Trading Research Lab</h1><p className="mt-2 text-slate-400">Historical backtest + trend research. Live execution is locked.</p></div><div className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-4 py-2 text-sm text-emerald-300">PAPER / RESEARCH MODE</div></header>
+  <section className="rounded-2xl border border-slate-800 bg-slate-900 p-6"><div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between"><div><h2 className="text-xl font-semibold">1. Upload historical data</h2><p className="text-sm text-slate-400">Export OHLCV CSV from Moomoo or Luno. Required: Date, Open, High, Low, Close. Volume is optional.</p></div><select value={asset} onChange={e=>setAsset(e.target.value)} className="rounded-lg border border-slate-700 bg-slate-950 p-2"><option>Moomoo Stocks</option><option>Luno Crypto</option></select></div><label className="mt-5 flex cursor-pointer items-center justify-center rounded-xl border border-dashed border-slate-700 p-8 text-slate-400 hover:border-emerald-500"><Upload className="mr-2" size={18}/> Choose CSV<input type="file" accept=".csv,text/csv" className="hidden" onChange={e=>{const f=e.target.files?.[0];if(f)f.text().then(setCsv)}}/></label>{csv&&<p className="mt-3 text-xs text-emerald-300">CSV loaded: {csv.split(/\r?\n/).length-1} rows</p>}<button onClick={run} disabled={!csv} className="mt-4 flex items-center gap-2 rounded-lg bg-emerald-500 px-5 py-3 font-semibold text-slate-950 disabled:opacity-40"><Play size={17}/> Run Backtest</button>{error&&<p className="mt-3 text-sm text-red-300">{error}</p>}</section>
+  <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">{[['Final Capital',result?`RM ${result.result.finalCapital.toFixed(2)}`:'—'],['Total Return',result?`${(result.result.totalReturn*100).toFixed(2)}%`:'—'],['Win Rate',result?`${(result.result.winRate*100).toFixed(1)}%`:'—'],['Max Drawdown',result?`${(result.result.maxDrawdown*100).toFixed(2)}%`:'—']].map(([a,b])=><div key={a} className="rounded-2xl border border-slate-800 bg-slate-900 p-5"><p className="text-sm text-slate-400">{a}</p><p className="mt-2 text-2xl font-semibold">{b}</p></div>)}</section>
+  <section className="grid gap-6 lg:grid-cols-3"><div className="lg:col-span-2 rounded-2xl border border-slate-800 bg-slate-900 p-6"><h2 className="text-xl font-semibold">Trend Prediction</h2><p className="mt-1 text-sm text-slate-400">Research signal based on moving-average trend structure. It is not a guaranteed forecast.</p>{result?<div className="mt-8 flex items-center gap-4"><TrendingUp className={result.result.latestSignal==='UPTREND'?'text-emerald-400':'text-slate-500'}/><div><div className="text-3xl font-bold">{result.result.latestSignal}</div><div className="mt-1 text-slate-400">Model confidence: {result.result.latestConfidence}% · Direction accuracy in tested signals: {(result.result.directionAccuracy*100).toFixed(1)}%</div></div></div>:<div className="mt-10 text-slate-500">Run a backtest to generate the latest signal.</div>}</div><div className="rounded-2xl border border-slate-800 bg-slate-900 p-6"><h2 className="text-xl font-semibold">Risk Engine</h2><div className="mt-5 space-y-4">{[['Max position','10%'],['Max exposure','50%'],['Daily loss limit','2%'],['Kill switch','10% drawdown']].map(([a,b])=><div className="flex justify-between border-b border-slate-800 pb-3" key={a}><span className="text-slate-400">{a}</span><span>{b}</span></div>)}</div><div className="mt-5 flex items-center gap-2 text-sm text-emerald-300"><ShieldCheck size={17}/> Live orders disabled</div></div></section>
+  <section className="rounded-2xl border border-slate-800 bg-slate-900 p-6"><div className="flex items-center gap-2"><Activity className="text-emerald-400"/><h2 className="text-xl font-semibold">Strategy</h2></div><div className="mt-5 grid gap-3 md:grid-cols-4">{['Support detection','Trend filter','Entry / exit rules','Compounding simulator'].map((x,i)=><div className="rounded-xl border border-slate-800 p-4" key={x}><div className="text-xs text-slate-500">0{i+1}</div><div className="mt-2 font-medium">{x}</div><div className="mt-2 text-xs text-emerald-300">Implemented / evolving</div></div>)}</div></section>
+ </div></main>
 }
