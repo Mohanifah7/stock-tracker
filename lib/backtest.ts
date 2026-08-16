@@ -7,9 +7,7 @@ export type Candle = {
   volume: number
 }
 
-export type ReplayPoint = {
-  date: string
-  close: number
+export type ReplayPoint = Candle & {
   equity: number
   signal: 'UPTREND' | 'DOWNTREND' | 'NEUTRAL'
   action: 'BUY' | 'SELL' | 'HOLD'
@@ -44,7 +42,7 @@ function ema(values: number[], period: number) {
 }
 
 export function runBacktest(candles: Candle[], startingCapital = 100000): BacktestResult {
-  if (candles.length < 25) throw new Error('At least 25 candles are required.')
+  if (candles.length < 25) throw new Error('At least 25 candles are required. For a meaningful backtest, 60+ candles are recommended.')
 
   const quickMode = candles.length < 60
   const fastPeriod = quickMode ? 8 : 12
@@ -70,7 +68,8 @@ export function runBacktest(candles: Candle[], startingCapital = 100000): Backte
   for (let i = startIndex; i < candles.length; i++) {
     const sShort = sma(closes, shortSmaPeriod, i)
     const sLong = sma(closes, longSmaPeriod, i)
-    const current = closes[i]
+    const candle = candles[i]
+    const current = candle.close
     let signal: ReplayPoint['signal'] = 'NEUTRAL'
     let action: ReplayPoint['action'] = 'HOLD'
 
@@ -109,7 +108,7 @@ export function runBacktest(candles: Candle[], startingCapital = 100000): Backte
     const equity = capital + (position ? position * (current - entry) : 0)
     peak = Math.max(peak, equity)
     maxDrawdown = Math.max(maxDrawdown, (peak - equity) / peak)
-    replay.push({ date: candles[i].date, close: current, equity, signal, action })
+    replay.push({ ...candle, equity, signal, action })
   }
 
   if (position) {
@@ -149,7 +148,6 @@ export function runBacktest(candles: Candle[], startingCapital = 100000): Backte
 export function parseCsv(text: string): Candle[] {
   const lines = text.trim().split(/\r?\n/).filter(Boolean)
   if (lines.length < 2) throw new Error('CSV has no data rows.')
-
   const headers = lines[0].split(',').map(x => x.trim().toLowerCase())
   const index = (names: string[]) => names.map(n => headers.indexOf(n)).find(i => i >= 0) ?? -1
   const d = index(['date', 'datetime', 'time'])
@@ -158,20 +156,9 @@ export function parseCsv(text: string): Candle[] {
   const l = index(['low'])
   const c = index(['close'])
   const v = index(['volume', 'vol'])
-
-  if ([d, o, h, l, c].some(x => x < 0)) {
-    throw new Error('CSV must contain Date, Open, High, Low and Close columns.')
-  }
-
+  if ([d, o, h, l, c].some(x => x < 0)) throw new Error('CSV must contain Date, Open, High, Low and Close columns.')
   return lines.slice(1).map(line => {
     const p = line.split(',')
-    return {
-      date: p[d],
-      open: Number(p[o]),
-      high: Number(p[h]),
-      low: Number(p[l]),
-      close: Number(p[c]),
-      volume: v >= 0 ? Number(p[v]) || 0 : 0,
-    }
+    return { date: p[d], open: Number(p[o]), high: Number(p[h]), low: Number(p[l]), close: Number(p[c]), volume: v >= 0 ? Number(p[v]) || 0 : 0 }
   }).filter(x => Number.isFinite(x.close) && Number.isFinite(x.open) && Number.isFinite(x.high) && Number.isFinite(x.low)).sort((a, b) => a.date.localeCompare(b.date))
 }
