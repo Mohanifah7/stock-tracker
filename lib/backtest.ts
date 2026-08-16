@@ -50,7 +50,6 @@ export function runBacktest(candles: Candle[], startingCapital = 100000): Backte
   const shortSmaPeriod = quickMode ? 10 : 20
   const longSmaPeriod = quickMode ? 20 : 50
   const startIndex = longSmaPeriod
-
   const closes = candles.map(c => c.close)
   const fast = ema(closes, fastPeriod)
   const slow = ema(closes, slowPeriod)
@@ -63,7 +62,7 @@ export function runBacktest(candles: Candle[], startingCapital = 100000): Backte
   let wins = 0
   let directionCorrect = 0
   let directionSamples = 0
-  const replay: ReplayPoint[] = []
+  const replay: ReplayPoint[] = candles.map(c => ({ ...c, equity: startingCapital, signal: 'NEUTRAL', action: 'HOLD' }))
 
   for (let i = startIndex; i < candles.length; i++) {
     const sShort = sma(closes, shortSmaPeriod, i)
@@ -77,7 +76,6 @@ export function runBacktest(candles: Candle[], startingCapital = 100000): Backte
       const predictedUp = fast[i] > slow[i] && current > sShort && sShort > sLong
       const predictedDown = fast[i] < slow[i] && current < sShort && sShort < sLong
       signal = predictedUp ? 'UPTREND' : predictedDown ? 'DOWNTREND' : 'NEUTRAL'
-
       if (i < candles.length - 1) {
         const actualUp = closes[i + 1] > current
         if (predictedUp || predictedDown) {
@@ -85,16 +83,13 @@ export function runBacktest(candles: Candle[], startingCapital = 100000): Backte
           if ((predictedUp && actualUp) || (predictedDown && !actualUp)) directionCorrect++
         }
       }
-
       const support = Math.min(...closes.slice(Math.max(0, i - shortSmaPeriod), i + 1))
       const nearSupport = current <= support * 1.025
-
       if (!position && predictedUp && nearSupport) {
         position = (capital * 0.1) / current
         entry = current
         action = 'BUY'
       }
-
       if (position && (current >= entry * 1.05 || current <= entry * 0.97 || predictedDown)) {
         capital += position * (current - entry)
         trades++
@@ -108,7 +103,7 @@ export function runBacktest(candles: Candle[], startingCapital = 100000): Backte
     const equity = capital + (position ? position * (current - entry) : 0)
     peak = Math.max(peak, equity)
     maxDrawdown = Math.max(maxDrawdown, (peak - equity) / peak)
-    replay.push({ ...candle, equity, signal, action })
+    replay[i] = { ...candle, equity, signal, action }
   }
 
   if (position) {
@@ -117,12 +112,12 @@ export function runBacktest(candles: Candle[], startingCapital = 100000): Backte
     trades++
     if (lastClose > entry) wins++
     const last = replay[replay.length - 1]
-    if (last) {
-      last.action = 'SELL'
-      last.equity = capital
-    }
+    last.action = 'SELL'
+    last.equity = capital
   }
 
+  let runningEquity = startingCapital
+  replay.forEach((p, i) => { if (i < startIndex) p.equity = runningEquity })
   const i = candles.length - 1
   const sShort = sma(closes, shortSmaPeriod, i) ?? closes[i]
   const sLong = sma(closes, longSmaPeriod, i) ?? closes[i]
