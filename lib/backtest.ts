@@ -140,20 +140,79 @@ export function runBacktest(candles: Candle[], startingCapital = 100000): Backte
   }
 }
 
+// Small CSV parser that correctly handles quoted fields, commas inside values,
+// UTF-8 BOMs, CRLF line endings, and common Moomoo/Luno column-name variants.
+function parseCsvRow(line: string): string[] {
+  const cells: string[] = []
+  let cell = ''
+  let quoted = false
+
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i]
+    if (ch === '"') {
+      if (quoted && line[i + 1] === '"') {
+        cell += '"'
+        i++
+      } else {
+        quoted = !quoted
+      }
+    } else if (ch === ',' && !quoted) {
+      cells.push(cell.trim())
+      cell = ''
+    } else {
+      cell += ch
+    }
+  }
+  cells.push(cell.trim())
+  return cells
+}
+
+function normalizeHeader(value: string): string {
+  return value
+    .replace(/^\uFEFF/, '')
+    .trim()
+    .toLowerCase()
+    .replace(/[()\[\]{}]/g, '')
+    .replace(/[^a-z0-9]+/g, '')
+}
+
 export function parseCsv(text: string): Candle[] {
-  const lines = text.trim().split(/\r?\n/).filter(Boolean)
+  const cleaned = text.replace(/^\uFEFF/, '').replace(/\r/g, '')
+  const lines = cleaned.split('\n').map(line => line.trim()).filter(Boolean)
   if (lines.length < 2) throw new Error('CSV has no data rows.')
-  const headers = lines[0].split(',').map(x => x.trim().toLowerCase())
-  const index = (names: string[]) => names.map(n => headers.indexOf(n)).find(i => i >= 0) ?? -1
-  const d = index(['date', 'datetime', 'time'])
-  const o = index(['open'])
-  const h = index(['high'])
-  const l = index(['low'])
-  const c = index(['close'])
-  const v = index(['volume', 'vol'])
-  if ([d, o, h, l, c].some(x => x < 0)) throw new Error('CSV must contain Date, Open, High, Low and Close columns.')
-  return lines.slice(1).map(line => {
-    const p = line.split(',')
-    return { date: p[d], open: Number(p[o]), high: Number(p[h]), low: Number(p[l]), close: Number(p[c]), volume: v >= 0 ? Number(p[v]) || 0 : 0 }
-  }).filter(x => Number.isFinite(x.close) && Number.isFinite(x.open) && Number.isFinite(x.high) && Number.isFinite(x.low)).sort((a, b) => a.date.localeCompare(b.date))
+
+  const headers = parseCsvRow(lines[0]).map(normalizeHeader)
+  const index = (names: string[]) => {
+    const normalized = names.map(normalizeHeader)
+    return normalized.map(name => headers.indexOf(name)).find(i => i >= 0) ?? -1
+  }
+
+  const d = index(['date', 'datetime', 'time', 'timestamp', 'date/time'])
+  const o = index(['open', 'openprice', 'open_price'])
+  const h = index(['high', 'highprice', 'high_price'])
+  const l = index(['low', 'lowprice', 'low_price'])
+  const c = index(['close', 'closeprice', 'close_price', 'last'])
+  const v = index(['volume', 'vol', 'volumeqty', 'volumequantity'])
+
+  if ([d, o, h, l, c].some(x => x < 0)) {
+    throw new Error(`CSV columns not recognised. Found: ${headers.join(', ')}. Required: Date, Open, High, Low, Close.`)
+  }
+
+  const rows: Candle[] = []
+  for (const line of lines.slice(1)) {
+    const p = parseCsvRow(line)
+    const open = Number(String(p[o] ?? '').replace(/,/g, ''))
+    const high = Number(String(p[h] ?? '').replace(/,/g, ''))
+    const low = Number(String(p[l] ?? '').replace(/,/g, ''))
+    const close = Number(String(p[c] ?? '').replace(/,/g, ''))
+    const volume = v >= 0 ? Number(String(p[v] ?? '').replace(/,/g, '')) || 0 : 0
+    const date = String(p[d] ?? '').trim()
+
+    if (date && [open, high, low, close].every(Number.isFinite)) {
+      rows.push({ date, open, high, low, close, volume })
+    }
+  }
+
+  if (rows.length < 2) throw new Error('CSV was found, but no valid OHLC rows could be read. Check the delimiter and column values.')
+  return rows.sort((a, b) => a.date.localeCompare(b.date))
 }
