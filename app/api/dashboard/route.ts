@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { demoDashboard, type DashboardData } from '@/lib/dashboard-data'
+import { demoDashboard, type DashboardData } from '../../../lib/dashboard-data'
 
 export const dynamic = 'force-dynamic'
 
