@@ -1,13 +1,13 @@
 'use client'
-import './dashboard.css'
 import {useEffect,useMemo,useState} from 'react'
+import type {ReactNode} from 'react'
 import {Activity,AlertTriangle,ArrowDownRight,ArrowUpRight,BarChart3,ShieldCheck,RefreshCw,TrendingUp,Wallet,Radio} from 'lucide-react'
 import type {DashboardData} from '@/lib/dashboard-data'
 
 const money=(n:number)=>`RM ${n.toLocaleString('en-MY',{minimumFractionDigits:2,maximumFractionDigits:2})}`
 const pct=(n:number)=>`${n>=0?'+':''}${n.toFixed(2)}%`
 
-function Badge({children,tone='neutral'}:{children:React.ReactNode;tone?:'buy'|'sell'|'warn'|'neutral'}){return <span className={`badge ${tone}`}>{children}</span>}
+function Badge({children,tone='neutral'}:{children:ReactNode;tone?:'buy'|'sell'|'warn'|'neutral'}){return <span className={`badge ${tone}`}>{children}</span>}
 function Card({title,sub,children,action}:{title:string;sub?:string;children:React.ReactNode;action?:React.ReactNode}){return <section className="dash-card"><div className="dash-card-head"><div><h2>{title}</h2>{sub&&<p>{sub}</p>}</div>{action}</div>{children}</section>}
 
 export default function Dashboard(){
