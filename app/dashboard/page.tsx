@@ -1,4 +1,5 @@
-'use client'\nimport './dashboard.css'
+'use client'
+import './dashboard.css'
 import {useEffect,useMemo,useState} from 'react'
 import {Activity,AlertTriangle,ArrowDownRight,ArrowUpRight,BarChart3,ShieldCheck,RefreshCw,TrendingUp,Wallet,Radio} from 'lucide-react'
 import type {DashboardData} from '@/lib/dashboard-data'
