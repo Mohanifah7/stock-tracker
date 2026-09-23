@@ -32,7 +32,7 @@ export async function GET() {
     const consensus = s ? {symbol:s.symbol,action:s.consensus,agreement:[s.mean_reversion,s.momentum,s.trend].filter((x:string)=>x===s.consensus).length,confidence:Number(s.confidence)} : demoDashboard.consensus
     const result:DashboardData = {
       account:{equity:Number(a.equity),cash:Number(a.cash),unrealizedPnl:(positions.data||[]).reduce((n:any,p:any)=>n+Number(p.unrealized_pnl||0),0),openPositions:(positions.data||[]).length,drawdown:Number(a.peak_equity)>0?(Number(a.peak_equity)-Number(a.equity))/Number(a.peak_equity):0,peakEquity:Number(a.peak_equity)},
-      consensus,strategies,
+      consensus,strategies:strategy,
       positions:(positions.data||[]).map((p:any)=>({symbol:p.symbol,side:p.side,quantity:Number(p.quantity),entryPrice:Number(p.entry_price),currentPrice:Number(p.current_price),pnl:Number(p.unrealized_pnl),pnlPct:Number(p.entry_price)?(Number(p.unrealized_pnl)/(Number(p.entry_price)*Number(p.quantity)))*100:0})),
       orders:(orders.data||[]).map((o:any)=>({id:o.id,symbol:o.symbol,side:o.side,type:o.order_type,quantity:Number(o.quantity),price:o.price==null?null:Number(o.price),status:o.status,createdAt:o.created_at})),
       pnl:(pnl.data||[]).map((p:any)=>({date:p.trade_date,value:Number(p.realized_pnl||0)+Number(p.unrealized_pnl||0),cumulative:0})),
