@@ -148,7 +148,7 @@ function normalizeHeader(value: string) {
     .replace(/[\s_\-./()]+/g, '')
 }
 
-function splitCsvLine(line: string) {
+function splitCsvLine(line: string, delimiter = ',') {
   const result: string[] = []
   let current = ''
   let quoted = false
@@ -156,7 +156,7 @@ function splitCsvLine(line: string) {
     const ch = line[i]
     if (ch === '"') {
       if (quoted && line[i + 1] === '"') { current += '"'; i++ } else quoted = !quoted
-    } else if (ch === ',' && !quoted) {
+    } else if (ch === delimiter && !quoted) {
       result.push(current.trim())
       current = ''
     } else current += ch
@@ -165,39 +165,96 @@ function splitCsvLine(line: string) {
   return result
 }
 
+function detectDelimiter(line: string) {
+  const candidates = [',', '\t', ';']
+  return candidates
+    .map(delimiter => ({ delimiter, count: splitCsvLine(line, delimiter).length - 1 }))
+    .sort((a, b) => b.count - a.count)[0].delimiter
+}
+
+function findHeaderLine(lines: string[]) {
+  const requiredGroups = [
+    ['date', 'datetime', 'time', 'timestamp', 'tradingdate', 'tradetime', 'updatetime'],
+    ['open', 'openprice'],
+    ['high', 'highprice'],
+    ['low', 'lowprice'],
+    ['close', 'closelast', 'closelastprice', 'last', 'lastprice', 'price'],
+  ]
+
+  for (let i = 0; i < Math.min(lines.length, 25); i++) {
+    const delimiter = detectDelimiter(lines[i])
+    const headers = splitCsvLine(lines[i], delimiter).map(normalizeHeader)
+    const hasOhlc = requiredGroups.slice(1).every(group => group.some(name => headers.includes(normalizeHeader(name))))
+    if (hasOhlc || (headers.includes('symbol') && headers.includes('price'))) {
+      return { index: i, delimiter, headers }
+    }
+  }
+
+  return null
+}
+
 export function parseCsv(text: string): Candle[] {
-  const lines = text.replace(/^\uFEFF/, '').trim().split(/\r?\n/).filter(Boolean)
+  const cleaned = text.replace(/^\uFEFF/, '').replace(/\r/g, '')
+  const lines = cleaned.split('\n').map(line => line.trim()).filter(Boolean)
   if (lines.length < 2) throw new Error('CSV has no data rows.')
 
-  const headers = splitCsvLine(lines[0]).map(normalizeHeader)
+  const headerInfo = findHeaderLine(lines)
+  if (!headerInfo) {
+    throw new Error('CSV header could not be detected. Export Moomoo historical/candlestick data with Date, Open, High, Low and Close/Last columns.')
+  }
+
+  const { index: headerIndex, delimiter, headers } = headerInfo
   const find = (names: string[]) => {
     const normalized = names.map(normalizeHeader)
     return normalized.map(n => headers.indexOf(n)).find(i => i >= 0) ?? -1
   }
 
-  const d = find(['date', 'datetime', 'time', 'timestamp'])
+  const d = find(['date', 'datetime', 'time', 'timestamp', 'tradingdate', 'tradetime', 'updatetime'])
   const o = find(['open', 'openprice'])
   const h = find(['high', 'highprice'])
   const l = find(['low', 'lowprice'])
-  // Moomoo commonly exports this field as Close/Last or CloseLast.
-  const c = find(['close', 'closelast', 'closelastprice', 'last', 'lastprice'])
+  // Moomoo exports can use Close/Last, CloseLast, Last or Price.
+  const c = find(['close', 'closelast', 'closelastprice', 'last', 'lastprice', 'price'])
   const v = find(['volume', 'vol'])
 
-  if ([d, o, h, l, c].some(x => x < 0)) {
+  const looksLikeMoomooSnapshot = headers.includes('symbol') && headers.includes('price') && headers.includes('prevclose')
+
+  if (d < 0) {
+    if (looksLikeMoomooSnapshot) {
+      throw new Error('This is a Moomoo stock snapshot, not historical price data. It has Price/Open/High/Low but no Date column, so it cannot be backtested. In Moomoo, export historical/candlestick data for the selected symbol with a Date/Time column.')
+    }
+    throw new Error(`CSV is missing a Date/Time column. Found: ${headers.join(', ')}. Required for backtesting: Date, Open, High, Low, Close/Last.`)
+  }
+
+  if ([o, h, l, c].some(x => x < 0)) {
     throw new Error(`CSV columns not recognised. Found: ${headers.join(', ')}. Required: Date, Open, High, Low and Close (Close/Last or CloseLast is accepted).`)
   }
 
-  const parseNumber = (value: string) => Number(value.replace(/,/g, '').replace(/^\$/,'').trim())
+  const parseNumber = (value: string) => {
+    const cleanedValue = String(value ?? '').replace(/,/g, '').replace(/^\$/,'').replace(/%$/,'').trim()
+    return Number(cleanedValue)
+  }
 
-  return lines.slice(1).map(line => {
-    const p = splitCsvLine(line)
+  const candles = lines.slice(headerIndex + 1).map(line => {
+    const p = splitCsvLine(line, delimiter)
     return {
-      date: p[d],
+      date: p[d]?.trim() ?? '',
       open: parseNumber(p[o]),
       high: parseNumber(p[h]),
       low: parseNumber(p[l]),
       close: parseNumber(p[c]),
       volume: v >= 0 ? parseNumber(p[v]) || 0 : 0,
     }
-  }).filter(x => x.date && Number.isFinite(x.close) && Number.isFinite(x.open) && Number.isFinite(x.high) && Number.isFinite(x.low)).sort((a, b) => a.date.localeCompare(b.date))
+  }).filter(x =>
+    x.date &&
+    Number.isFinite(x.close) &&
+    Number.isFinite(x.open) &&
+    Number.isFinite(x.high) &&
+    Number.isFinite(x.low)
+  )
+
+  if (!candles.length) throw new Error('No valid OHLC rows were found in this CSV.')
+  if (candles.length < 25) throw new Error(`Only ${candles.length} valid candle(s) were found. At least 25 are required; 60+ is recommended for a meaningful backtest.`)
+
+  return candles.sort((a, b) => a.date.localeCompare(b.date))
 }
