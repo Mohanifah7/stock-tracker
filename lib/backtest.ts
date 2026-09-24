@@ -254,7 +254,8 @@ export function parseCsv(text: string): Candle[] {
   )
 
   if (!candles.length) throw new Error('No valid OHLC rows were found in this CSV.')
-  if (candles.length < 25) throw new Error(`Only ${candles.length} valid candle(s) were found. At least 25 are required; 60+ is recommended for a meaningful backtest.`)
 
+  // Import/replay may use any number of valid candles. runBacktest() enforces
+  // the 25-candle minimum so multiple CSV files can be combined first.
   return candles.sort((a, b) => a.date.localeCompare(b.date))
 }
