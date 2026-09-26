@@ -1,6 +1,6 @@
 'use client'
 import {useEffect,useState} from 'react'
-import {Activity,BarChart3,BookOpen,CalendarDays,CheckCircle2,ClipboardList,Download,FileText,Gauge,History,LayoutDashboard,Pause,Play,Plus,RotateCcw,ShieldCheck,Star,Target,TrendingUp,Upload,Wallet} from 'lucide-react'
+import {Activity,BarChart3,BookOpen,CalendarDays,CheckCircle2,ClipboardList,Download,FileText,Gauge,History,LayoutDashboard,ListChecks,Pause,Play,Plus,RotateCcw,ShieldCheck,Star,Target,TrendingUp,Upload,Wallet} from 'lucide-react'
 import {parseCsv, type Candle} from '../lib/backtest'
 
 type Result={finalCapital:number;totalReturn:number;winRate:number;maxDrawdown:number;latestSignal:string;latestConfidence:number;directionAccuracy:number;trades:number;mode:'FULL'|'QUICK';replay:Candle[]}
