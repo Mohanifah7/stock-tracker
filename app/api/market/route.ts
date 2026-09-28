@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
 
 export const dynamic = 'force-dynamic'
 
@@ -14,35 +15,60 @@ export async function GET(request: Request) {
     : 100
 
   if (!ALLOWED_SYMBOLS.has(symbol)) {
-    return NextResponse.json(
-      { ok: false, message: 'Unsupported symbol.' },
-      { status: 400 },
-    )
+    return NextResponse.json({ok:false,message:'Unsupported symbol.'},{status:400})
   }
 
+  // Local development: use the Moomoo/OpenD worker first.
   try {
     const response = await fetch(
       `${WORKER_URL}/candles?symbol=${encodeURIComponent(symbol)}&limit=${limit}`,
-      { cache: 'no-store' },
+      {cache:'no-store', signal:AbortSignal.timeout(2500)}
     )
-
     const data = await response.json()
-
-    if (!response.ok) {
-      return NextResponse.json(
-        { ok: false, message: data?.message || 'Moomoo worker request failed.' },
-        { status: response.status },
-      )
+    if (response.ok && Array.isArray(data?.candles) && data.candles.length) {
+      return NextResponse.json({...data,source:'moomoo-worker'})
     }
-
-    return NextResponse.json(data)
   } catch {
-    return NextResponse.json(
-      {
-        ok: false,
-        message: 'Moomoo worker is unavailable. Start scripts/moomoo_market_worker.py first.',
-      },
-      { status: 503 },
-    )
+    // On Vercel the local worker is normally unreachable; continue to Supabase.
   }
+
+  // Deployed fallback: read candles persisted by the market-data ingestor.
+  const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (url && key) {
+    try {
+      const supabase = createClient(url,key,{auth:{persistSession:false}})
+      const {data,error} = await supabase
+        .from('price_history')
+        .select('timestamp,open,high,low,close,volume')
+        .eq('symbol',symbol)
+        .order('timestamp',{ascending:false})
+        .limit(limit)
+
+      if (!error && data?.length) {
+        return NextResponse.json({
+          ok:true,
+          symbol,
+          candles:data.reverse().map((x:any)=>({
+            time:x.timestamp,
+            open:Number(x.open),
+            high:Number(x.high),
+            low:Number(x.low),
+            close:Number(x.close),
+            volume:Number(x.volume||0)
+          })),
+          source:'supabase'
+        })
+      }
+    } catch {
+      // Fall through to a useful offline response.
+    }
+  }
+
+  return NextResponse.json({
+    ok:false,
+    symbol,
+    candles:[],
+    message:'No market candles are available yet. Local development needs the Moomoo worker; deployed Vercel needs persisted candles in Supabase.'
+  },{status:503})
 }
