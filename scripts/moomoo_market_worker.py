@@ -4,6 +4,7 @@ Local Moomoo -> Stock Tracker market-data bridge.
 Paper/research only:
 - Connects to Moomoo OpenD on localhost.
 - Subscribes to 1-minute candles for NVDA, GOOGL and MSFT.
+- Seeds the cache with the latest subscribed candles at startup.
 - Keeps a small in-memory candle cache.
 - Exposes localhost HTTP endpoints for the Next.js app.
 - Does NOT place, modify, or cancel brokerage orders.
@@ -17,7 +18,14 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
 try:
-    from moomoo import OpenQuoteContext, SubType, Session, RET_OK, CurKlineHandlerBase
+    from moomoo import (
+        OpenQuoteContext,
+        SubType,
+        Session,
+        RET_OK,
+        CurKlineHandlerBase,
+        AuType,
+    )
 except ImportError as exc:
     raise SystemExit("Moomoo SDK is missing. Install it with: py -m pip install moomoo-api") from exc
 
@@ -27,8 +35,10 @@ HTTP_HOST = "127.0.0.1"
 HTTP_PORT = 8787
 SYMBOLS = ["US.NVDA", "US.GOOGL", "US.MSFT"]
 CACHE_SIZE = 500
+SEED_COUNT = 100
 candles = defaultdict(lambda: deque(maxlen=CACHE_SIZE))
 state = {"connected": False, "message": "Starting...", "updatedAt": None}
+
 
 def json_candle(row: dict, symbol: str) -> dict:
     return {
@@ -41,6 +51,51 @@ def json_candle(row: dict, symbol: str) -> dict:
         "volume": float(row.get("volume", 0)),
         "turnover": float(row.get("turnover", 0)),
     }
+
+
+def add_candle(candle: dict) -> None:
+    symbol = candle["symbol"]
+    if not symbol or symbol not in SYMBOLS:
+        return
+
+    existing = [x for x in candles[symbol] if x["time"] != candle["time"]]
+    candles[symbol] = deque(existing, maxlen=CACHE_SIZE)
+    candles[symbol].append(candle)
+
+
+def seed_current_candles(quote_ctx) -> int:
+    seeded = 0
+    errors = []
+
+    for symbol in SYMBOLS:
+        ret, data = quote_ctx.get_cur_kline(
+            symbol,
+            SEED_COUNT,
+            SubType.K_1M,
+            AuType.QFQ,
+        )
+
+        if ret != RET_OK:
+            errors.append(f"{symbol}: {data}")
+            continue
+
+        if data is None or data.empty:
+            errors.append(f"{symbol}: no candles returned")
+            continue
+
+        for _, row in data.iterrows():
+            add_candle(json_candle(row.to_dict(), symbol))
+            seeded += 1
+
+    if seeded:
+        state["message"] = f"Connected to OpenD; seeded {seeded} candles and listening for 1-minute updates."
+        state["updatedAt"] = time.strftime("%Y-%m-%dT%H:%M:%S")
+    elif errors:
+        state["message"] = "Connected, but no seed candles were returned: " + " | ".join(errors)
+        state["updatedAt"] = time.strftime("%Y-%m-%dT%H:%M:%S")
+
+    return seeded
+
 
 class CandleHandler(CurKlineHandlerBase):
     def on_recv_rsp(self, rsp_pb):
@@ -56,14 +111,12 @@ class CandleHandler(CurKlineHandlerBase):
             symbol = str(row.get("code", ""))
             if symbol not in SYMBOLS:
                 continue
-            candle = json_candle(row.to_dict(), symbol)
-            items = [x for x in candles[symbol] if x["time"] != candle["time"]]
-            candles[symbol] = deque(items, maxlen=CACHE_SIZE)
-            candles[symbol].append(candle)
+            add_candle(json_candle(row.to_dict(), symbol))
 
         state["updatedAt"] = time.strftime("%Y-%m-%dT%H:%M:%S")
         state["message"] = "Receiving 1-minute market data."
         return ret, data
+
 
 class Handler(BaseHTTPRequestHandler):
     def send_json(self, status: int, payload: dict):
@@ -113,6 +166,7 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, *_args):
         return
 
+
 def main():
     quote_ctx = OpenQuoteContext(host=HOST, port=OPEND_PORT)
     handler = CandleHandler()
@@ -130,13 +184,16 @@ def main():
         raise SystemExit("Moomoo subscription failed: " + str(message))
 
     state["connected"] = True
-    state["message"] = "Connected to OpenD; subscribed to US 1-minute candles."
+    state["message"] = "Connected to OpenD; subscription active. Seeding current candles..."
     state["updatedAt"] = time.strftime("%Y-%m-%dT%H:%M:%S")
+
+    seeded = seed_current_candles(quote_ctx)
 
     server = ThreadingHTTPServer((HTTP_HOST, HTTP_PORT), Handler)
     print("Stock Tracker Moomoo worker: http://127.0.0.1:8787")
     print("OpenD: 127.0.0.1:11111")
     print("Symbols: " + ", ".join(SYMBOLS))
+    print(f"Seeded candles: {seeded}")
     print("Paper/research mode: no broker orders are implemented.")
 
     try:
@@ -147,6 +204,7 @@ def main():
         server.server_close()
         quote_ctx.unsubscribe_all()
         quote_ctx.close()
+
 
 if __name__ == "__main__":
     main()
